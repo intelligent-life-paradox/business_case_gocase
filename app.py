@@ -80,7 +80,6 @@ def load_data():
 
     produtos["Categoria_PT"] = produtos["Categoria"].map(CAT_PT).fillna(produtos["Categoria"])
 
-    #  Mapeia IDs hash → números sequenciais legíveis
     ids_filiais  = sorted(filiais["ID_Filial"].dropna().unique())
     ids_clientes = sorted(clientes["ID_Cliente"].dropna().unique())
     mapa_filial  = {orig: i+1 for i, orig in enumerate(ids_filiais)}
@@ -92,14 +91,16 @@ def load_data():
     filiais["ID_Filial_Num"]   = filiais["ID_Filial"].map(mapa_filial)
 
     df = (
-    vendas
-    .merge(clientes[["ID_Cliente","ID_Cliente_Num","Sexo","Regiao"]],
-           on="ID_Cliente", how="left")
-    .merge(filiais[["ID_Filial","Estado"]], 
-           on="ID_Filial", how="left")
-    .merge(produtos[["ID_Produto","Categoria_PT"]],
-           on="ID_Produto", how="left")
-)
+        vendas
+        .merge(clientes[["ID_Cliente","ID_Cliente_Num","Sexo","Regiao"]],
+               on="ID_Cliente", how="left")
+        .merge(filiais[["ID_Filial","Estado"]],  
+               on="ID_Filial", how="left")
+        .merge(produtos[["ID_Produto","Categoria_PT"]],
+               on="ID_Produto", how="left")
+    )
+    df.rename(columns={"Regiao":"Regiao_Cliente"}, inplace=True)
+    return df, mapa_filial, mapa_cliente 
 
 df, mapa_filial, mapa_cliente = load_data()
 # Mapas inversos: número → ID original
