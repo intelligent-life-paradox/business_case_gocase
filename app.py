@@ -442,7 +442,7 @@ with col_detalhe_cli:
                 f"💰 Valor acumulado: **R$ {valor_total_cliente:,.2f}**"
             )
 
-            with st.expander("Ver histórico de compras (últimas 10)"):
+            with st.expander("Ver histórico de compras (últimas 1)"):
                 hist = compras_cliente[["Data_Venda","Hora","Categoria_PT","ID_Filial_Num","Valor_Total"]].head(10).copy()
                 hist["ID_Filial_Num"] = "Filial " + hist["ID_Filial_Num"].astype(str)
                 hist["Data_Venda"]    = hist["Data_Venda"].dt.strftime("%d/%m/%Y")
