@@ -100,7 +100,8 @@ streamlit run app/main.py
 
 -   **SQL de Alta Performance:** Uso de `LAG()` para cálculo de
     crescimento MoM e `ROW_NUMBER()` para filtros de ranking por região,
-    evitando Table Scans e utilizando índices compostos.
+    evitando Table Scans e utilizando índices compostos. Além disso,
+    fiz a implementação de um plano de execução (recurso comum do sql-server)
 -   **Data Quality:** Implementação de validação de meses incompletos
     (exclui automaticamente o último mês da série se ele tiver menos de
     28 dias de dados para não enviesar as médias).
