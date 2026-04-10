@@ -336,7 +336,7 @@ with col_reg:
         color_discrete_sequence=PALETA_REG,
         text=rec_reg["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
     )
-    fig_reg.update_traces(textposition="outside", showlegend=False)
+    fig_reg.update_traces(textposition="auto", showlegend=False)
     fig_reg.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         margin=dict(t=10, b=10, l=15, r=150),
@@ -366,7 +366,7 @@ with col_fil:
         color_discrete_sequence=[COR],
         text=rec_fil["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
     )
-    fig_fil.update_traces(textposition="outside", showlegend=False)
+    fig_fil.update_traces(textposition="auto", showlegend=False)
     fig_fil.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
         margin=dict(t=10, b=10, l=15, r=150),
@@ -542,7 +542,7 @@ else:
             fig_fat_fil.update_traces(textposition="outside", showlegend=False)
             fig_fat_fil.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(t=30, b=15), height=300,
+                margin=dict(t=60, b=15), height=300,
             )
             st.plotly_chart(fig_fat_fil, use_container_width=True)
 
@@ -596,7 +596,7 @@ else:
                 color_discrete_sequence=[COR],
                 text=top_cat_fil["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
             )
-            fig_cat_fil.update_traces(textposition="outside", showlegend=False)
+            fig_cat_fil.update_traces(textposition="auto", showlegend=False)
             fig_cat_fil.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                 margin=dict(t=10, b=10, l=15, r=150),
