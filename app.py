@@ -339,7 +339,7 @@ with col_reg:
     fig_reg.update_traces(textposition="outside", showlegend=False)
     fig_reg.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10, b=10, l=10, r=100),
+        margin=dict(t=10, b=10, l=15, r=150),
         height=300,
         yaxis=dict(categoryorder="total ascending"),
     )
@@ -369,8 +369,8 @@ with col_fil:
     fig_fil.update_traces(textposition="outside", showlegend=False)
     fig_fil.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10, b=10, l=10, r=100),
-        height=300,
+        margin=dict(t=10, b=10, l=15, r=150),
+        height=350,
         yaxis=dict(categoryorder="total ascending"),
     )
     st.plotly_chart(fig_fil, use_container_width=True)
@@ -542,7 +542,7 @@ else:
             fig_fat_fil.update_traces(textposition="outside", showlegend=False)
             fig_fat_fil.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(t=30, b=10), height=280,
+                margin=dict(t=30, b=15), height=300,
             )
             st.plotly_chart(fig_fat_fil, use_container_width=True)
 
@@ -574,7 +574,7 @@ else:
                 )
                 fig_mensal_fil.update_layout(
                     plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                    margin=dict(t=30, b=10), height=280,
+                    margin=dict(t=30, b=20), height=300,
                 )
                 st.plotly_chart(fig_mensal_fil, use_container_width=True)
 
@@ -599,8 +599,8 @@ else:
             fig_cat_fil.update_traces(textposition="outside", showlegend=False)
             fig_cat_fil.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(t=10, b=10, l=10, r=100),
-                height=360,
+                margin=dict(t=10, b=10, l=15, r=150),
+                height=380,
                 yaxis=dict(categoryorder="total ascending"),
             )
             st.plotly_chart(fig_cat_fil, use_container_width=True)
