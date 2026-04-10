@@ -339,7 +339,7 @@ with col_reg:
     fig_reg.update_traces(textposition="outside", showlegend=False)
     fig_reg.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10, b=10, l=10, r=80),
+        margin=dict(t=10, b=10, l=10, r=100),
         height=300,
         yaxis=dict(categoryorder="total ascending"),
     )
@@ -369,7 +369,7 @@ with col_fil:
     fig_fil.update_traces(textposition="outside", showlegend=False)
     fig_fil.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10, b=10, l=10, r=80),
+        margin=dict(t=10, b=10, l=10, r=100),
         height=300,
         yaxis=dict(categoryorder="total ascending"),
     )
@@ -599,7 +599,7 @@ else:
             fig_cat_fil.update_traces(textposition="outside", showlegend=False)
             fig_cat_fil.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(t=10, b=10, l=10, r=80),
+                margin=dict(t=10, b=10, l=10, r=100),
                 height=360,
                 yaxis=dict(categoryorder="total ascending"),
             )
