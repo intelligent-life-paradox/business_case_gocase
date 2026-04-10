@@ -539,7 +539,7 @@ else:
                 color_discrete_map={True: COR, False: COR_NEUTRA},
                 text=df_fat_fil["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
             )
-            fig_fat_fil.update_traces(textposition="outside", showlegend=False)
+            fig_fat_fil.update_traces(textposition="auto", showlegend=False)
             fig_fat_fil.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                 margin=dict(t=60, b=15), height=300,
