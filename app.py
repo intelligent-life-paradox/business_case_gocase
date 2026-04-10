@@ -110,7 +110,7 @@ def meses_completos(df_slice):
         return meses_ok, mes_max
     return list(por_mes.index), None
 
-st.markdown("## Dashboard de Varejo")
+st.markdown("## Dashboard de Varejo baseado baseado no dataset público Olist Ecommerce")
 st.markdown("---")
 
 #  BLOCO 1: seletor de ano + filtros 
