@@ -73,22 +73,22 @@ streamlit run app/main.py
   ------------------------------------------------------------------------
   Seção           Conteúdo                  Indicadores
   --------------- ------------------------- ------------------------------
-  Filtros         Controle total da visão   Ano, Sexo do Cliente e Região
-  Dinâmicos                                 do Brasil
+ **Filtros         Controle total da visão   Ano, Sexo do Cliente e Região
+  Dinâmicos**                                do Brasil
 
-  KPIs de         Visão macro do negócio    Receita Total, Pedidos, Ticket
-  Performance                               Médio e Clientes Únicos
+  **KPIs de         Visão macro do negócio    Receita Total, Pedidos, Ticket
+  Performance**                               **Médio e Clientes Únicos**
 
-  Tendência       Evolução temporal         Gráfico de barras com linha de
-  Mensal                                    média móvel e tratamento de
-                                            meses incompletos
+  **Tendência       Evolução temporal         Gráfico de barras com linha de
+  Mensal**                                    **média móvel e tratamento de
+                                            meses incompletos**
 
-  Evolução Anual  Comparativo histórico     Gráfico de linhas destacando o
+  **Evolução Anual  Comparativo histórico**     **Gráfico de linhas destacando o
                                             ano selecionado na série
-                                            temporal
+                                            temporal**
 
-  Mix de Produtos Análise de portfólio      Top 5 categorias mais
-                                            rentáveis (Gráfico de Rosca)
+  **Mix de Produtos Análise de portfólio      Top 5 categorias mais
+                                            rentáveis (Gráfico de Rosca)**
 
   Comportamento   Perfil de consumo         Ticket médio anual comparativo
                                             por ano selecionado
