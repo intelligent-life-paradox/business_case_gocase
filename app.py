@@ -65,10 +65,10 @@ CAT_PT = {
 def load_data():
     base = "dados" if os.path.isdir("dados") else "data"
 
-    vendas   = pd.read_csv(f"{base}/vendas.csv")
-    clientes = pd.read_csv(f"{base}/clientes.csv")
-    filiais  = pd.read_csv(f"{base}/filiais.csv")
-    produtos = pd.read_csv(f"{base}/produtos.csv")
+    vendas     = pd.read_csv(f"{base}/vendas.csv")
+    clientes   = pd.read_csv(f"{base}/clientes.csv")
+    vendedores = pd.read_csv(f"{base}/filiais.csv")
+    produtos   = pd.read_csv(f"{base}/produtos.csv")
 
     vendas["Data_Venda"]   = pd.to_datetime(vendas["Data_Venda"])
     vendas["Ano"]          = vendas["Data_Venda"].dt.year
@@ -80,32 +80,32 @@ def load_data():
 
     produtos["Categoria_PT"] = produtos["Categoria"].map(CAT_PT).fillna(produtos["Categoria"])
 
-    ids_filiais  = sorted(filiais["ID_Filial"].dropna().unique())
-    ids_clientes = sorted(clientes["ID_Cliente"].dropna().unique())
-    mapa_filial  = {orig: i+1 for i, orig in enumerate(ids_filiais)}
-    mapa_cliente = {orig: i+1 for i, orig in enumerate(ids_clientes)}
+    ids_vendedores = sorted(vendedores["ID_Filial"].dropna().unique())
+    ids_clientes   = sorted(clientes["ID_Cliente"].dropna().unique())
+    mapa_vendedor  = {orig: i+1 for i, orig in enumerate(ids_vendedores)}
+    mapa_cliente   = {orig: i+1 for i, orig in enumerate(ids_clientes)}
 
-    vendas["ID_Filial_Num"]  = vendas["ID_Filial"].map(mapa_filial)
-    vendas["ID_Cliente_Num"] = vendas["ID_Cliente"].map(mapa_cliente)
+    vendas["ID_Vendedor_Num"]  = vendas["ID_Filial"].map(mapa_vendedor)
+    vendas["ID_Cliente_Num"]   = vendas["ID_Cliente"].map(mapa_cliente)
     clientes["ID_Cliente_Num"] = clientes["ID_Cliente"].map(mapa_cliente)
-    filiais["ID_Filial_Num"]   = filiais["ID_Filial"].map(mapa_filial)
+    vendedores["ID_Vendedor_Num"] = vendedores["ID_Filial"].map(mapa_vendedor)
 
     df = (
         vendas
         .merge(clientes[["ID_Cliente","ID_Cliente_Num","Sexo","Regiao"]],
                on="ID_Cliente", how="left")
-        .merge(filiais[["ID_Filial","Estado"]],  
+        .merge(vendedores[["ID_Filial","Estado"]],  
                on="ID_Filial", how="left")
         .merge(produtos[["ID_Produto","Categoria_PT"]],
                on="ID_Produto", how="left")
     )
     df.rename(columns={"Regiao":"Regiao_Cliente"}, inplace=True)
-    return df, mapa_filial, mapa_cliente 
+    return df, mapa_vendedor, mapa_cliente 
 
-df, mapa_filial, mapa_cliente = load_data()
+df, mapa_vendedor, mapa_cliente = load_data()
 # Mapas inversos: número → ID original
-inv_filial  = {v: k for k, v in mapa_filial.items()}
-inv_cliente = {v: k for k, v in mapa_cliente.items()}
+inv_vendedor = {v: k for k, v in mapa_vendedor.items()}
+inv_cliente  = {v: k for k, v in mapa_cliente.items()}
 
 # Helper: meses completos
 def meses_completos(df_slice):
@@ -178,28 +178,50 @@ k4.metric("Clientes únicos", f"{dano_c['ID_Cliente'].nunique():,}")
 
 if mes_cortado:
     st.caption(
-        f"ℹ️  {MESES_PT[mes_cortado]}/{ano_sel} excluído — "
+        f"ℹ️  {MESES_PT[mes_cortado]}/{ano_sel} excluído dos KPIs — "
         "dados incompletos no último mês da série."
     )
 
 st.markdown("---")
 
-# BLOCO 3: receita mês a mês
+# BLOCO 3: receita mês a mês (Ajustado para mostrar todos os 12 meses + Linha de Tendência)
 st.markdown(f"#### Receita mês a mês — {ano_sel}")
 
+# Cria um dataframe auxiliar com todos os 12 meses para forçar a exibição no gráfico
+df_todos_meses = pd.DataFrame({
+    "MesNum": list(MESES_PT.keys()), 
+    "MesPT": list(MESES_PT.values())
+})
+
+# Usa o `dano` inteiro (para mostrar até os meses cortados no gráfico)
 mensal = (
-    dano_c
-    .groupby(["MesNum","MesPT"])["Valor_Total"]
-    .sum().reset_index().sort_values("MesNum")
+    dano
+    .groupby("MesNum")["Valor_Total"]
+    .sum().reset_index()
 )
+
+# Faz o merge para garantir que meses sem venda fiquem com valor 0
+mensal = df_todos_meses.merge(mensal, on="MesNum", how="left").fillna(0)
 mensal["MesPT"] = pd.Categorical(mensal["MesPT"], categories=MESES_ORDEM, ordered=True)
-media_m = mensal["Valor_Total"].mean()
+
+# Calcula a média apenas dos meses que tiveram alguma venda para a linha pontilhada
+media_m = mensal[mensal["Valor_Total"] > 0]["Valor_Total"].mean()
 
 fig_mensal = px.bar(
     mensal, x="MesPT", y="Valor_Total",
     labels={"Valor_Total":"Receita (R$)","MesPT":""},
     color_discrete_sequence=[COR],
 )
+
+# Adiciona a linha de tendência (azul) sobre as barras
+fig_mensal.add_trace(go.Scatter(
+    x=mensal["MesPT"],
+    y=mensal["Valor_Total"],
+    mode="lines+markers",
+    line=dict(color="blue", width=3),
+    name="Tendência"
+))
+
 fig_mensal.add_hline(
     y=media_m, line_dash="dot", line_color=COR_NEUTRA,
     annotation_text=f"Média: R$ {media_m:,.0f}",
@@ -208,7 +230,7 @@ fig_mensal.add_hline(
 )
 fig_mensal.update_layout(
     plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-    margin=dict(t=20,b=10), height=280,
+    margin=dict(t=20,b=10), height=320, showlegend=False
 )
 st.plotly_chart(fig_mensal, use_container_width=True)
 
@@ -311,23 +333,24 @@ with col_ticket:
 st.markdown("---")
 
 
-# BLOCO 6 (NOVO): COMPARAÇÃO ENTRE FILIAIS E REGIÕES
+# BLOCO 6 (NOVO E AJUSTADO): COMPARAÇÃO ENTRE REGIÕES E VENDEDORES + MAPA DE CALOR
 
-st.markdown("#### Comparação de vendas entre filiais e regiões")
+st.markdown("#### Comparação de vendas entre regiões e vendedores")
 st.caption("Baseado nos filtros globais de ano, sexo e região selecionados.")
 
-col_reg, col_fil = st.columns(2)
+col_reg, col_mapa, col_ven = st.columns([1, 1.2, 1])
+
+# DataFrame base para as regiões
+rec_reg = (
+    dano_c
+    .groupby("Regiao_Cliente")["Valor_Total"]
+    .sum().reset_index()
+    .sort_values("Valor_Total", ascending=False)
+)
+rec_reg.columns = ["Região", "Receita"]
 
 with col_reg:
     st.markdown(f"##### Receita por região — {ano_sel}")
-    rec_reg = (
-        dano_c
-        .groupby("Regiao_Cliente")["Valor_Total"]
-        .sum().reset_index()
-        .sort_values("Valor_Total", ascending=False)
-    )
-    rec_reg.columns = ["Região", "Receita"]
-
     fig_reg = px.bar(
         rec_reg, x="Receita", y="Região",
         orientation="h",
@@ -339,46 +362,69 @@ with col_reg:
     fig_reg.update_traces(textposition="auto", showlegend=False)
     fig_reg.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10, b=10, l=15, r=150),
-        height=300,
+        margin=dict(t=10, b=10, l=15, r=50),
+        height=350,
         yaxis=dict(categoryorder="total ascending"),
     )
     st.plotly_chart(fig_reg, use_container_width=True)
 
-with col_fil:
-    st.markdown(f"##### Top filiais por receita — {ano_sel}")
-    n_top = st.slider("Número de filiais", min_value=3, max_value=20, value=10, key="slider_top_filiais")
+with col_mapa:
+    st.markdown(f"##### Mapa de Calor por Região")
+    # URL oficial do GeoJSON com os limites dos estados brasileiros
+    url_geojson_br = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
+    
+    fig_mapa = px.choropleth(
+        rec_reg,
+        geojson=url_geojson_br,
+        locations="Região",
+        featureidkey="properties.sigla", # Mapeia as siglas (SP, RJ) do geojson com a coluna "Região"
+        color="Receita",
+        color_continuous_scale="Oranges", 
+        labels={"Receita": "Receita (R$)"}
+    )
+    fig_mapa.update_geos(fitbounds="locations", visible=False)
+    fig_mapa.update_layout(
+        margin=dict(t=10, b=10, l=10, r=10),
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        height=350,
+        coloraxis_colorbar=dict(title="")
+    )
+    st.plotly_chart(fig_mapa, use_container_width=True)
 
-    rec_fil = (
+with col_ven:
+    st.markdown(f"##### Top vendedores por receita — {ano_sel}")
+    n_top = st.slider("Número de vendedores", min_value=3, max_value=20, value=10, key="slider_top_vendedores")
+
+    rec_ven = (
         dano_c
-        .groupby("ID_Filial_Num")["Valor_Total"]
+        .groupby("ID_Vendedor_Num")["Valor_Total"]
         .sum().reset_index()
         .sort_values("Valor_Total", ascending=False)
         .head(n_top)
     )
-    rec_fil.columns = ["Filial", "Receita"]
-    rec_fil["Filial"] = "Filial " + rec_fil["Filial"].astype(str)
+    rec_ven.columns = ["Vendedor", "Receita"]
+    rec_ven["Vendedor"] = "Vendedor " + rec_ven["Vendedor"].astype(str)
 
-    fig_fil = px.bar(
-        rec_fil, x="Receita", y="Filial",
+    fig_ven = px.bar(
+        rec_ven, x="Receita", y="Vendedor",
         orientation="h",
-        labels={"Receita":"Receita (R$)", "Filial":""},
+        labels={"Receita":"Receita (R$)", "Vendedor":""},
         color_discrete_sequence=[COR],
-        text=rec_fil["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
+        text=rec_ven["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
     )
-    fig_fil.update_traces(textposition="auto", showlegend=False)
-    fig_fil.update_layout(
+    fig_ven.update_traces(textposition="auto", showlegend=False)
+    fig_ven.update_layout(
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10, b=10, l=15, r=150),
+        margin=dict(t=10, b=10, l=15, r=100),
         height=350,
         yaxis=dict(categoryorder="total ascending"),
     )
-    st.plotly_chart(fig_fil, use_container_width=True)
+    st.plotly_chart(fig_ven, use_container_width=True)
 
 st.markdown("---")
 
 
-# BLOCO 7 (NOVO): CONSULTA DE CLIENTE
+# BLOCO 7: CONSULTA DE CLIENTE
 
 st.markdown("#### Consulta de cliente")
 
@@ -423,18 +469,18 @@ with col_detalhe_cli:
         else:
             ultima = compras_cliente.iloc[0]
 
-            sexo_val    = ultima.get("Sexo", "—")
-            hora_val    = ultima.get("Hora", "—")
-            filial_num  = ultima.get("ID_Filial_Num")
-            filial_val  = f"Filial {int(filial_num)}" if pd.notna(filial_num) else "—"
-            cat_val     = ultima.get("Categoria_PT", "—")
-            total_compras       = len(compras_cliente)
+            sexo_val      = ultima.get("Sexo", "—")
+            hora_val      = ultima.get("Hora", "—")
+            vendedor_num  = ultima.get("ID_Vendedor_Num")
+            vendedor_val  = f"Vendedor {int(vendedor_num)}" if pd.notna(vendedor_num) else "—"
+            cat_val       = ultima.get("Categoria_PT", "—")
+            total_compras = len(compras_cliente)
             valor_total_cliente = compras_cliente["Valor_Total"].sum()
 
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Sexo",           sexo_val)
             c2.metric("Hora da compra", hora_val)
-            c3.metric("Filial",         filial_val)
+            c3.metric("Vendedor",       vendedor_val)
             c4.metric("Categoria",      cat_val)
 
             st.caption(
@@ -443,47 +489,47 @@ with col_detalhe_cli:
             )
 
             with st.expander("Ver histórico de compras (últimas 1)"):
-                hist = compras_cliente[["Data_Venda","Hora","Categoria_PT","ID_Filial_Num","Valor_Total"]].head(10).copy()
-                hist["ID_Filial_Num"] = "Filial " + hist["ID_Filial_Num"].astype(str)
-                hist["Data_Venda"]    = hist["Data_Venda"].dt.strftime("%d/%m/%Y")
-                hist.columns = ["Data","Hora","Categoria","Filial","Valor (R$)"]
+                hist = compras_cliente[["Data_Venda","Hora","Categoria_PT","ID_Vendedor_Num","Valor_Total"]].head(10).copy()
+                hist["ID_Vendedor_Num"] = "Vendedor " + hist["ID_Vendedor_Num"].astype(str)
+                hist["Data_Venda"]      = hist["Data_Venda"].dt.strftime("%d/%m/%Y")
+                hist.columns = ["Data","Hora","Categoria","Vendedor","Valor (R$)"]
                 hist["Valor (R$)"] = hist["Valor (R$)"].apply(lambda v: f"R$ {v:,.2f}")
                 st.dataframe(hist, use_container_width=True, hide_index=True)
 
 st.markdown("---")
 
 
-# BLOCO 8 (NOVO): EXPLORADOR DE FILIAL
+# BLOCO 8: EXPLORADOR DE VENDEDOR (Anteriormente Explorador de Filial)
 
-st.markdown("#### Explorador de filial")
+st.markdown("#### Explorador de vendedor")
 
-nums_filiais = sorted(inv_filial.keys())   # [1, 2, 3, ...]
+nums_vendedores = sorted(inv_vendedor.keys())   # [1, 2, 3, ...]
 
 col_busca_exp, col_ano_exp_wrap = st.columns([2, 2])
 
 with col_busca_exp:
-    st.caption("🔍 Digite o número da filial para pesquisar.\n\nExemplo: **filial 1**, **filial 7** ou apenas **7**")
-    busca_filial_exp = st.text_input(
-        "Busca de filial",
-        key="busca_filial_exp",
-        placeholder="filial 1",
+    st.caption("🔍 Digite o número do vendedor para pesquisar.\n\nExemplo: **vendedor 1**, **vendedor 7** ou apenas **7**")
+    busca_vendedor_exp = st.text_input(
+        "Busca de vendedor",
+        key="busca_vendedor_exp",
+        placeholder="vendedor 1",
         label_visibility="collapsed",
     )
 
-    filial_num_sel = None
-    if busca_filial_exp.strip():
-        num_str_fil = "".join(filter(str.isdigit, busca_filial_exp))
-        if num_str_fil:
-            n_fil = int(num_str_fil)
-            if n_fil in inv_filial:
-                filial_num_sel = n_fil
-                st.caption(f"✅ Exibindo Filial {n_fil}")
+    vendedor_num_sel = None
+    if busca_vendedor_exp.strip():
+        num_str_ven = "".join(filter(str.isdigit, busca_vendedor_exp))
+        if num_str_ven:
+            n_ven = int(num_str_ven)
+            if n_ven in inv_vendedor:
+                vendedor_num_sel = n_ven
+                st.caption(f"✅ Exibindo Vendedor {n_ven}")
             else:
-                st.caption(f"⚠️ Filial {n_fil} não encontrada. Filiais disponíveis: 1 a {max(nums_filiais)}.")
+                st.caption(f"⚠️ Vendedor {n_ven} não encontrado. Vendedores disponíveis: 1 a {max(nums_vendedores)}.")
         else:
             st.caption("⚠️ Digite um número válido.")
     else:
-        st.caption(f"ℹ️ Filiais disponíveis: **1** a **{max(nums_filiais)}**")
+        st.caption(f"ℹ️ Vendedores disponíveis: **1** a **{max(nums_vendedores)}**")
 
 with col_ano_exp_wrap:
     anos_exp = sorted(df["Ano"].dropna().unique())
@@ -497,110 +543,110 @@ with col_ano_exp_wrap:
         label_visibility="collapsed",
     )
 
-if filial_num_sel is None:
-    st.info("Use a busca acima para selecionar uma filial.")
+if vendedor_num_sel is None:
+    st.info("Use a busca acima para selecionar um vendedor.")
 else:
-    filial_id_orig = inv_filial[filial_num_sel]
-    df_filial = df[df["ID_Filial"] == filial_id_orig].copy()
+    vendedor_id_orig = inv_vendedor[vendedor_num_sel]
+    df_vendedor = df[df["ID_Vendedor"] == vendedor_id_orig].copy()
 
-    if df_filial.empty:
-        st.info(f"Sem dados para Filial {filial_num_sel}.")
+    if df_vendedor.empty:
+        st.info(f"Sem dados para Vendedor {vendedor_num_sel}.")
     else:
-        st.markdown(f"##### Filial {filial_num_sel}")
+        st.markdown(f"##### Vendedor {vendedor_num_sel}")
 
-        df_filial_ano   = df_filial[df_filial["Ano"] == ano_exp]
-        meses_ok_f, _   = meses_completos(df_filial_ano)
-        df_filial_ano_c = df_filial_ano[df_filial_ano["MesNum"].isin(meses_ok_f)]
+        df_vendedor_ano   = df_vendedor[df_vendedor["Ano"] == ano_exp]
+        meses_ok_v, _     = meses_completos(df_vendedor_ano)
+        df_vendedor_ano_c = df_vendedor_ano[df_vendedor_ano["MesNum"].isin(meses_ok_v)]
 
         fk1, fk2, fk3 = st.columns(3)
-        fk1.metric(f"Receita {ano_exp}", f"R$ {df_filial_ano_c['Valor_Total'].sum():,.0f}")
-        fk2.metric("Pedidos",            f"{len(df_filial_ano_c):,}")
+        fk1.metric(f"Receita {ano_exp}", f"R$ {df_vendedor_ano_c['Valor_Total'].sum():,.0f}")
+        fk2.metric("Pedidos",            f"{len(df_vendedor_ano_c):,}")
         fk3.metric(
             "Ticket médio",
-            f"R$ {df_filial_ano_c['Valor_Total'].mean():,.2f}" if not df_filial_ano_c.empty else "—"
+            f"R$ {df_vendedor_ano_c['Valor_Total'].mean():,.2f}" if not df_vendedor_ano_c.empty else "—"
         )
 
         col_fat_ano, col_fat_mes = st.columns(2)
 
         with col_fat_ano:
             st.markdown("##### Faturamento por ano")
-            fat_ano_filial = []
+            fat_ano_vendedor = []
             for a in anos_exp:
-                da_f = df_filial[df_filial["Ano"] == a]
-                mc_f, _ = meses_completos(da_f)
-                tot_f = da_f[da_f["MesNum"].isin(mc_f)]["Valor_Total"].sum()
-                fat_ano_filial.append({"Ano": str(a), "Receita": tot_f, "Sel": a == ano_exp})
-            df_fat_fil = pd.DataFrame(fat_ano_filial)
+                da_v = df_vendedor[df_vendedor["Ano"] == a]
+                mc_v, _ = meses_completos(da_v)
+                tot_v = da_v[da_v["MesNum"].isin(mc_v)]["Valor_Total"].sum()
+                fat_ano_vendedor.append({"Ano": str(a), "Receita": tot_v, "Sel": a == ano_exp})
+            df_fat_ven = pd.DataFrame(fat_ano_vendedor)
 
-            fig_fat_fil = px.bar(
-                df_fat_fil, x="Ano", y="Receita",
+            fig_fat_ven = px.bar(
+                df_fat_ven, x="Ano", y="Receita",
                 labels={"Receita":"Receita (R$)","Ano":""},
                 color="Sel",
                 color_discrete_map={True: COR, False: COR_NEUTRA},
-                text=df_fat_fil["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
+                text=df_fat_ven["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
             )
-            fig_fat_fil.update_traces(textposition="auto", showlegend=False)
-            fig_fat_fil.update_layout(
+            fig_fat_ven.update_traces(textposition="auto", showlegend=False)
+            fig_fat_ven.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                 margin=dict(t=60, b=15), height=300,
             )
-            st.plotly_chart(fig_fat_fil, use_container_width=True)
+            st.plotly_chart(fig_fat_ven, use_container_width=True)
 
         with col_fat_mes:
             st.markdown(f"##### Faturamento por mês — {ano_exp}")
-            if df_filial_ano_c.empty:
-                st.info("Sem dados completos para este ano nesta filial.")
+            if df_vendedor_ano_c.empty:
+                st.info("Sem dados completos para este ano neste vendedor.")
             else:
-                mensal_fil = (
-                    df_filial_ano_c
+                mensal_ven = (
+                    df_vendedor_ano_c
                     .groupby(["MesNum","MesPT"])["Valor_Total"]
                     .sum().reset_index().sort_values("MesNum")
                 )
-                mensal_fil["MesPT"] = pd.Categorical(
-                    mensal_fil["MesPT"], categories=MESES_ORDEM, ordered=True
+                mensal_ven["MesPT"] = pd.Categorical(
+                    mensal_ven["MesPT"], categories=MESES_ORDEM, ordered=True
                 )
-                media_mf = mensal_fil["Valor_Total"].mean()
+                media_mv = mensal_ven["Valor_Total"].mean()
 
-                fig_mensal_fil = px.bar(
-                    mensal_fil, x="MesPT", y="Valor_Total",
+                fig_mensal_ven = px.bar(
+                    mensal_ven, x="MesPT", y="Valor_Total",
                     labels={"Valor_Total":"Receita (R$)","MesPT":""},
                     color_discrete_sequence=[COR],
                 )
-                fig_mensal_fil.add_hline(
-                    y=media_mf, line_dash="dot", line_color=COR_NEUTRA,
-                    annotation_text=f"Média: R$ {media_mf:,.0f}",
+                fig_mensal_ven.add_hline(
+                    y=media_mv, line_dash="dot", line_color=COR_NEUTRA,
+                    annotation_text=f"Média: R$ {media_mv:,.0f}",
                     annotation_position="top left",
                     annotation_font_size=11,
                 )
-                fig_mensal_fil.update_layout(
+                fig_mensal_ven.update_layout(
                     plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                     margin=dict(t=30, b=20), height=300,
                 )
-                st.plotly_chart(fig_mensal_fil, use_container_width=True)
+                st.plotly_chart(fig_mensal_ven, use_container_width=True)
 
-        st.markdown(f"##### O que mais se compra nesta filial — {ano_exp}")
-        if df_filial_ano_c.empty:
-            st.info("Sem dados para este ano nesta filial.")
+        st.markdown(f"##### O que mais se compra com este vendedor — {ano_exp}")
+        if df_vendedor_ano_c.empty:
+            st.info("Sem dados para este ano neste vendedor.")
         else:
-            top_cat_fil = (
-                df_filial_ano_c
+            top_cat_ven = (
+                df_vendedor_ano_c
                 .groupby("Categoria_PT")["Valor_Total"]
                 .sum().nlargest(10).reset_index()
             )
-            top_cat_fil.columns = ["Categoria", "Receita"]
+            top_cat_ven.columns = ["Categoria", "Receita"]
 
-            fig_cat_fil = px.bar(
-                top_cat_fil, x="Receita", y="Categoria",
+            fig_cat_ven = px.bar(
+                top_cat_ven, x="Receita", y="Categoria",
                 orientation="h",
                 labels={"Receita":"Receita (R$)", "Categoria":""},
                 color_discrete_sequence=[COR],
-                text=top_cat_fil["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
+                text=top_cat_ven["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
             )
-            fig_cat_fil.update_traces(textposition="auto", showlegend=False)
-            fig_cat_fil.update_layout(
+            fig_cat_ven.update_traces(textposition="auto", showlegend=False)
+            fig_cat_ven.update_layout(
                 plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
                 margin=dict(t=10, b=10, l=15, r=150),
                 height=380,
                 yaxis=dict(categoryorder="total ascending"),
             )
-            st.plotly_chart(fig_cat_fil, use_container_width=True)
+            st.plotly_chart(fig_cat_ven, use_container_width=True)
