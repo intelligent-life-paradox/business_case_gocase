@@ -1,4 +1,6 @@
 import os
+import urllib.request
+import json
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -60,6 +62,78 @@ CAT_PT = {
     "kitchen_dining_laundry_garden_furniture":"Cozinha/Jardim",
 }
 
+# Carregamento do Mapa (Garante que vai baixar o GeoJSON sem dar erro de CORS)
+REGIAO_ESTADOS = {
+    "Norte":       ["AM","RR","AP","PA","TO","RO","AC"],
+    "Nordeste":    ["MA","PI","CE","RN","PE","PB","SE","AL","BA"],
+    "Centro-Oeste":["MT","MS","GO","DF"],
+    "Sudeste":     ["SP","RJ","ES","MG"],
+    "Sul":         ["PR","SC","RS"],
+}
+
+@st.cache_data
+def load_geojson():
+    """Baixa o GeoJSON de estados e agrega geometrias por região."""
+    url = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
+    try:
+        with urllib.request.urlopen(url) as response:
+            estados_geo = json.loads(response.read().decode())
+    except Exception:
+        return None
+
+    # Inverte o mapa: sigla → região
+    sigla_regiao = {
+        sigla: regiao
+        for regiao, siglas in REGIAO_ESTADOS.items()
+        for sigla in siglas
+    }
+
+    # Agrupa features por região
+    from collections import defaultdict
+    regioes_features = defaultdict(list)
+    for feat in estados_geo["features"]:
+        sigla = feat["properties"].get("sigla", "")
+        regiao = sigla_regiao.get(sigla)
+        if regiao:
+            regioes_features[regiao].append(feat)
+
+    # Constrói um GeoJSON com MultiPolygon por região
+    # (usa shapely se disponível, senão faz merge ingênuo de coordenadas)
+    try:
+        from shapely.geometry import shape, mapping
+        from shapely.ops import unary_union
+
+        new_features = []
+        for regiao, feats in regioes_features.items():
+            geoms = [shape(f["geometry"]) for f in feats]
+            merged = unary_union(geoms)
+            new_features.append({
+                "type": "Feature",
+                "properties": {"regiao": regiao},
+                "geometry": mapping(merged),
+            })
+        return {"type": "FeatureCollection", "features": new_features}
+
+    except ImportError:
+        # Fallback: agrupa coordenadas como MultiPolygon sem shapely
+        new_features = []
+        for regiao, feats in regioes_features.items():
+            all_coords = []
+            for f in feats:
+                g = f["geometry"]
+                if g["type"] == "Polygon":
+                    all_coords.append(g["coordinates"])
+                elif g["type"] == "MultiPolygon":
+                    all_coords.extend(g["coordinates"])
+            new_features.append({
+                "type": "Feature",
+                "properties": {"regiao": regiao},
+                "geometry": {"type": "MultiPolygon", "coordinates": all_coords},
+            })
+        return {"type": "FeatureCollection", "features": new_features}
+
+br_geojson = load_geojson()
+
 # Carregamento
 @st.cache_data
 def load_data():
@@ -69,6 +143,9 @@ def load_data():
     clientes   = pd.read_csv(f"{base}/clientes.csv")
     vendedores = pd.read_csv(f"{base}/filiais.csv")
     produtos   = pd.read_csv(f"{base}/produtos.csv")
+    
+    clientes   = clientes.drop_duplicates(subset="ID_Cliente")   
+    vendedores = vendedores.drop_duplicates(subset="ID_Filial")
 
     vendas["Data_Venda"]   = pd.to_datetime(vendas["Data_Venda"])
     vendas["Ano"]          = vendas["Data_Venda"].dt.year
@@ -178,34 +255,23 @@ k4.metric("Clientes únicos", f"{dano_c['ID_Cliente'].nunique():,}")
 
 if mes_cortado:
     st.caption(
-        f"ℹ️  {MESES_PT[mes_cortado]}/{ano_sel} excluído dos KPIs — "
+        f"ℹ️  {MESES_PT[mes_cortado]}/{ano_sel} excluído dos KPIs e Gráficos — "
         "dados incompletos no último mês da série."
     )
 
 st.markdown("---")
 
-# BLOCO 3: receita mês a mês (Ajustado para mostrar todos os 12 meses + Linha de Tendência)
+# BLOCO 3: receita mês a mês (Cortando os meses incompletos mas mantendo a linha azul)
 st.markdown(f"#### Receita mês a mês — {ano_sel}")
 
-# Cria um dataframe auxiliar com todos os 12 meses para forçar a exibição no gráfico
-df_todos_meses = pd.DataFrame({
-    "MesNum": list(MESES_PT.keys()), 
-    "MesPT": list(MESES_PT.values())
-})
-
-# Usa o `dano` inteiro (para mostrar até os meses cortados no gráfico)
+# Usando dano_c para respeitar o corte de meses incompletos
 mensal = (
-    dano
-    .groupby("MesNum")["Valor_Total"]
-    .sum().reset_index()
+    dano_c
+    .groupby(["MesNum", "MesPT"])["Valor_Total"]
+    .sum().reset_index().sort_values("MesNum")
 )
-
-# Faz o merge para garantir que meses sem venda fiquem com valor 0
-mensal = df_todos_meses.merge(mensal, on="MesNum", how="left").fillna(0)
 mensal["MesPT"] = pd.Categorical(mensal["MesPT"], categories=MESES_ORDEM, ordered=True)
-
-# Calcula a média apenas dos meses que tiveram alguma venda para a linha pontilhada
-media_m = mensal[mensal["Valor_Total"] > 0]["Valor_Total"].mean()
+media_m = mensal["Valor_Total"].mean()
 
 fig_mensal = px.bar(
     mensal, x="MesPT", y="Valor_Total",
@@ -213,7 +279,7 @@ fig_mensal = px.bar(
     color_discrete_sequence=[COR],
 )
 
-# Adiciona a linha de tendência (azul) sobre as barras
+# Adiciona a linha de tendência (azul) apenas sobre as barras existentes
 fig_mensal.add_trace(go.Scatter(
     x=mensal["MesPT"],
     y=mensal["Valor_Total"],
@@ -233,6 +299,7 @@ fig_mensal.update_layout(
     margin=dict(t=20,b=10), height=320, showlegend=False
 )
 st.plotly_chart(fig_mensal, use_container_width=True)
+
 
 #BLOCO 4: evolução ano a ano 
 st.markdown("#### Evolução da receita — ano a ano")
@@ -273,32 +340,32 @@ st.markdown("---")
 col_pie, col_ticket = st.columns(2)
 
 with col_pie:
-    st.markdown(f"#### Top 5 categorias — {ano_sel}")
+    st.markdown(f"#### Top 7 categorias — {ano_sel}")
     st.caption("Filtrado por sexo e região selecionados.")
 
-    top5 = (
+    top7 = (
         dano_c
         .groupby("Categoria_PT")["Valor_Total"]
-        .sum().nlargest(5).reset_index()
+        .sum().nlargest(7).reset_index()
     )
-    top5.columns = ["Categoria","Receita"]
+    top7.columns = ["Categoria","Receita"]
 
     fig_pie = px.pie(
-        top5, values="Receita", names="Categoria",
-        hole=0.42,
+        top7, values="Receita", names="Categoria",
+        hole=0.45,
         color_discrete_sequence=PALETA_PIE,
     )
     fig_pie.update_traces(
         textposition="inside",
         textinfo="percent+label",
-        textfont_size=11,
+        textfont_size=13,
     )
     fig_pie.update_layout(
         showlegend=True,
         legend=dict(orientation="h", y=-0.18, font_size=11),
         plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=10,b=50),
-        height=340,
+        margin=dict(t=15,b=55),
+        height=350,
     )
     st.plotly_chart(fig_pie, use_container_width=True)
 
@@ -333,7 +400,7 @@ with col_ticket:
 st.markdown("---")
 
 
-# BLOCO 6 (NOVO E AJUSTADO): COMPARAÇÃO ENTRE REGIÕES E VENDEDORES + MAPA DE CALOR
+# BLOCO 6: COMPARAÇÃO ENTRE REGIÕES E VENDEDORES + MAPA DE CALOR CORRIGIDO
 
 st.markdown("#### Comparação de vendas entre regiões e vendedores")
 st.caption("Baseado nos filtros globais de ano, sexo e região selecionados.")
@@ -370,30 +437,39 @@ with col_reg:
 
 with col_mapa:
     st.markdown(f"##### Mapa de Calor por Região")
-    # URL oficial do GeoJSON com os limites dos estados brasileiros
-    url_geojson_br = "https://raw.githubusercontent.com/codeforamerica/click_that_hood/master/public/data/brazil-states.geojson"
     
-    fig_mapa = px.choropleth(
-        rec_reg,
-        geojson=url_geojson_br,
-        locations="Região",
-        featureidkey="properties.sigla", # Mapeia as siglas (SP, RJ) do geojson com a coluna "Região"
-        color="Receita",
-        color_continuous_scale="Oranges", 
-        labels={"Receita": "Receita (R$)"}
-    )
-    fig_mapa.update_geos(fitbounds="locations", visible=False)
-    fig_mapa.update_layout(
-        margin=dict(t=10, b=10, l=10, r=10),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        height=350,
-        coloraxis_colorbar=dict(title="")
-    )
-    st.plotly_chart(fig_mapa, use_container_width=True)
+    if br_geojson:
+        fig_mapa = px.choropleth(
+            rec_reg,
+            geojson=br_geojson,
+            locations="Região",
+            featureidkey="properties.regiao",
+            color="Receita",
+            color_continuous_scale="Oranges", 
+            labels={"Receita": "Receita (R$)"}
+        )
+        
+        # Oculta bordas e fundo da terra padrão para evitar o quadrado branco
+        fig_mapa.update_geos(
+            fitbounds="locations", 
+            visible=False,
+            bgcolor="rgba(0,0,0,0)"
+        )
+        
+        fig_mapa.update_layout(
+            margin=dict(t=0, b=0, l=0, r=0),
+            plot_bgcolor="rgba(0,0,0,0)", 
+            paper_bgcolor="rgba(0,0,0,0)",
+            height=350,
+            coloraxis_colorbar=dict(title="", thickness=10)
+        )
+        st.plotly_chart(fig_mapa, use_container_width=True)
+    else:
+        st.warning("Não foi possível carregar as coordenadas do mapa.")
 
 with col_ven:
     st.markdown(f"##### Top vendedores por receita — {ano_sel}")
-    n_top = st.slider("Número de vendedores", min_value=3, max_value=20, value=10, key="slider_top_vendedores")
+    n_top = st.slider("Número de vendedores", min_value=3, max_value=12, value=10, key="slider_top_vendedores")
 
     rec_ven = (
         dano_c
@@ -488,7 +564,7 @@ with col_detalhe_cli:
                 f"💰 Valor acumulado: **R$ {valor_total_cliente:,.2f}**"
             )
 
-            with st.expander("Ver histórico de compras (últimas 1)"):
+            with st.expander("Ver histórico das últimas 10 compras deste cliente (lembre-se que muitas vezes um cliente faz uma compra única)"):
                 hist = compras_cliente[["Data_Venda","Hora","Categoria_PT","ID_Vendedor_Num","Valor_Total"]].head(10).copy()
                 hist["ID_Vendedor_Num"] = "Vendedor " + hist["ID_Vendedor_Num"].astype(str)
                 hist["Data_Venda"]      = hist["Data_Venda"].dt.strftime("%d/%m/%Y")
@@ -499,7 +575,7 @@ with col_detalhe_cli:
 st.markdown("---")
 
 
-# BLOCO 8: EXPLORADOR DE VENDEDOR (Anteriormente Explorador de Filial)
+# BLOCO 8: EXPLORADOR DE VENDEDOR
 
 st.markdown("#### Explorador de vendedor")
 
@@ -547,7 +623,7 @@ if vendedor_num_sel is None:
     st.info("Use a busca acima para selecionar um vendedor.")
 else:
     vendedor_id_orig = inv_vendedor[vendedor_num_sel]
-    df_vendedor = df[df["ID_Vendedor"] == vendedor_id_orig].copy()
+    df_vendedor = df[df["ID_Filial"] == vendedor_id_orig].copy()
 
     if df_vendedor.empty:
         st.info(f"Sem dados para Vendedor {vendedor_num_sel}.")
@@ -575,78 +651,3 @@ else:
                 da_v = df_vendedor[df_vendedor["Ano"] == a]
                 mc_v, _ = meses_completos(da_v)
                 tot_v = da_v[da_v["MesNum"].isin(mc_v)]["Valor_Total"].sum()
-                fat_ano_vendedor.append({"Ano": str(a), "Receita": tot_v, "Sel": a == ano_exp})
-            df_fat_ven = pd.DataFrame(fat_ano_vendedor)
-
-            fig_fat_ven = px.bar(
-                df_fat_ven, x="Ano", y="Receita",
-                labels={"Receita":"Receita (R$)","Ano":""},
-                color="Sel",
-                color_discrete_map={True: COR, False: COR_NEUTRA},
-                text=df_fat_ven["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
-            )
-            fig_fat_ven.update_traces(textposition="auto", showlegend=False)
-            fig_fat_ven.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(t=60, b=15), height=300,
-            )
-            st.plotly_chart(fig_fat_ven, use_container_width=True)
-
-        with col_fat_mes:
-            st.markdown(f"##### Faturamento por mês — {ano_exp}")
-            if df_vendedor_ano_c.empty:
-                st.info("Sem dados completos para este ano neste vendedor.")
-            else:
-                mensal_ven = (
-                    df_vendedor_ano_c
-                    .groupby(["MesNum","MesPT"])["Valor_Total"]
-                    .sum().reset_index().sort_values("MesNum")
-                )
-                mensal_ven["MesPT"] = pd.Categorical(
-                    mensal_ven["MesPT"], categories=MESES_ORDEM, ordered=True
-                )
-                media_mv = mensal_ven["Valor_Total"].mean()
-
-                fig_mensal_ven = px.bar(
-                    mensal_ven, x="MesPT", y="Valor_Total",
-                    labels={"Valor_Total":"Receita (R$)","MesPT":""},
-                    color_discrete_sequence=[COR],
-                )
-                fig_mensal_ven.add_hline(
-                    y=media_mv, line_dash="dot", line_color=COR_NEUTRA,
-                    annotation_text=f"Média: R$ {media_mv:,.0f}",
-                    annotation_position="top left",
-                    annotation_font_size=11,
-                )
-                fig_mensal_ven.update_layout(
-                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                    margin=dict(t=30, b=20), height=300,
-                )
-                st.plotly_chart(fig_mensal_ven, use_container_width=True)
-
-        st.markdown(f"##### O que mais se compra com este vendedor — {ano_exp}")
-        if df_vendedor_ano_c.empty:
-            st.info("Sem dados para este ano neste vendedor.")
-        else:
-            top_cat_ven = (
-                df_vendedor_ano_c
-                .groupby("Categoria_PT")["Valor_Total"]
-                .sum().nlargest(10).reset_index()
-            )
-            top_cat_ven.columns = ["Categoria", "Receita"]
-
-            fig_cat_ven = px.bar(
-                top_cat_ven, x="Receita", y="Categoria",
-                orientation="h",
-                labels={"Receita":"Receita (R$)", "Categoria":""},
-                color_discrete_sequence=[COR],
-                text=top_cat_ven["Receita"].apply(lambda v: f"R$ {v:,.0f}"),
-            )
-            fig_cat_ven.update_traces(textposition="auto", showlegend=False)
-            fig_cat_ven.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(t=10, b=10, l=15, r=150),
-                height=380,
-                yaxis=dict(categoryorder="total ascending"),
-            )
-            st.plotly_chart(fig_cat_ven, use_container_width=True)
